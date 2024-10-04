@@ -1,5 +1,6 @@
 import random
 from collections import deque
+import matplotlib.pyplot as plt
 
 class Labyrinthe:
     def __init__(self, taille):
@@ -76,7 +77,6 @@ class Bot:
         i, j = position
         mouvements = []
         
-        # Vérifier les 4 directions et s'assurer que le bot ne sort pas du plateau
         if i > 0 and self.labyrinthe.plateau[i-1][j] in ['⬛', '✅']:  # Haut
             mouvements.append(('haut', (i-1, j)))
         if i < self.labyrinthe.taille - 1 and self.labyrinthe.plateau[i+1][j] in ['⬛', '✅']:  # Bas
@@ -85,88 +85,102 @@ class Bot:
             mouvements.append(('gauche', (i, j-1)))
         if j < self.labyrinthe.taille - 1 and self.labyrinthe.plateau[i][j+1] in ['⬛', '✅']:  # Droite
             mouvements.append(('droite', (i, j+1)))
-
         return mouvements
 
     def deplacer_aleatoirement(self):
-        """Le bot se déplace aléatoirement du nombre de mouvement minimum pour trouver l'arriver."""
+        """Le bot se déplace aléatoirement et compte le nombre de mouvements."""
+        self.chemin = []
+        self.position = self.labyrinthe.depart  # Réinitialise la position à chaque appel
         while self.position != self.labyrinthe.arrivee:
             mouvements = self.deplacements_possibles(self.position)
             if not mouvements:
-                print("Le bot est bloqué, aucun mouvement possible.")
-                return False
-            
-            # Choisir un mouvement aléatoire parmi les mouvements possibles
+                return float('inf')  # Bot bloqué, retour d'une valeur très élevée
             direction, nouvelle_position = random.choice(mouvements)
-            # print(f"Le bot se déplace {direction} vers {nouvelle_position}.")
-            
             self.position = nouvelle_position
             self.chemin.append(self.position)
-            
-            # Afficher l'état du plateau après chaque mouvement
-            # self.afficher_etat()
 
-        print(f"Le bot a atteint l'arrivée en {len(self.chemin)} mouvements.")
-        return True
+        return len(self.chemin)  # Retourne le nombre de mouvements du bot
 
-    def afficher_etat(self):
-        """Affiche l'état actuel du plateau avec la position du bot."""
-        plateau_temporaire = [ligne[:] for ligne in self.labyrinthe.plateau]  # Copier le plateau
-        i, j = self.position
-        plateau_temporaire[i][j] = '🤖'  # Position actuelle du bot
-
-        for ligne in plateau_temporaire:
-            print(''.join(ligne))
-        print()  # Ligne vide pour séparer les étapes
-
-    def bfs_chemin_minimum(self):
-        """Utilise BFS pour trouver le chemin le plus court entre les deux points '✅'."""
-        file = deque([(self.labyrinthe.depart, [])])
-        visite = set([self.labyrinthe.depart])
-        
-        while file:
-            position_actuelle, chemin = file.popleft()
-            
-            if position_actuelle == self.labyrinthe.arrivee:
-                print(f"Le chemin minimum trouvé est de {len(chemin)} mouvements.")
-                return chemin
-
-            for _, voisin in self.deplacements_possibles(position_actuelle):
-                if voisin not in visite:
-                    visite.add(voisin)
-                    file.append((voisin, chemin + [voisin]))
-
-        print("Aucun chemin trouvé.")
-        return None
-    
 class Supervisor:
     def __init__(self):
         self.plateaux = []
 
     def generer_plateaux(self, n):
-        labyrinthe = Labyrinthe(20)
+        labyrinthe = Labyrinthe(10)
         for _ in range(n):
             self.plateaux.append(labyrinthe)
             labyrinthe.sauvegarder_plateau()
 
-    def afficher_plateaux(self):
-        for labyrinthe in self.plateaux:
-            labyrinthe.afficher_plateau()
-
-    def lancer_jeu(self):
+    def evaluation(self):
         for labyrinthe in self.plateaux:
             bot = Bot(labyrinthe)
             bot.deplacer_aleatoirement()
-            chemin_minimum = bot.bfs_chemin_minimum()
-            if chemin_minimum:
-                print(f"Chemin minimum : {chemin_minimum}")
-            print()
-            
-    def evaluation(self):
-        pass
 
+class Enfant_meilleur_bot:
+    def __init__(self, supervisor):
+        self.supervisor = supervisor
+        self.bots_scores = []
 
-if __name__ == "__main__":
+    def selectionner_meilleurs_bots(self):
+        """Évalue les bots et sélectionne les deux meilleurs en fonction de leur performance."""
+        self.bots_scores = []
+        for labyrinthe in self.supervisor.plateaux:
+            bot = Bot(labyrinthe)
+            score = bot.deplacer_aleatoirement()  # On utilise ici le score de déplacement aléatoire
+            self.bots_scores.append((bot, score))
+        
+        # Trier les bots par score (nombre de mouvements) croissant
+        self.bots_scores.sort(key=lambda x: x[1])
+        
+        # Sélectionner les deux meilleurs
+        meilleurs_bots = [self.bots_scores[0][0], self.bots_scores[1][0]]
+        return meilleurs_bots, self.bots_scores[0][1]  # Retourne les meilleurs bots et leur meilleur score
+
+    def relancer_meilleurs_bots(self, bots):
+        """Relance les deux meilleurs bots 100 fois chacun avec 5% de modification aléatoire."""
+        for bot in bots:
+            for _ in range(100):
+                if random.random() < 0.0001 and bot.chemin:
+                    index_a_modifier = random.randint(0, len(bot.chemin) - 1)
+                    mouvements_possibles = bot.deplacements_possibles(bot.chemin[index_a_modifier])
+                    if mouvements_possibles:
+                        _, nouvelle_position = random.choice(mouvements_possibles)
+                        bot.chemin[index_a_modifier] = nouvelle_position
+                
+                bot.position = bot.labyrinthe.depart  # Réinitialiser la position du bot
+                bot.deplacer_aleatoirement()
+    
+    def ameliorer_generation(self):
+        """Effectue une génération d'amélioration avec les deux meilleurs bots."""
+        meilleurs_bots, meilleur_score = self.selectionner_meilleurs_bots()
+        self.relancer_meilleurs_bots(meilleurs_bots)
+        return meilleur_score  # Retourne le meilleur score de cette génération
+
+# Fonction pour exécuter et tracer les résultats
+def run_genetic_algorithm(nb_generations):
     supervisor = Supervisor()
     supervisor.generer_plateaux(5)
-    supervisor.lancer_jeu()
+    supervisor.evaluation()
+
+    enfant_bot = Enfant_meilleur_bot(supervisor)
+
+    generations = []
+    meilleurs_scores = []
+
+    # Améliorer les bots sur plusieurs générations
+    for generation in range(nb_generations):
+        print(f"--- Génération {generation + 1} ---")
+        meilleur_score = enfant_bot.ameliorer_generation()
+        generations.append(generation + 1)
+        meilleurs_scores.append(meilleur_score)
+
+    # Traçage des résultats
+    plt.plot(generations, meilleurs_scores, marker='o')
+    plt.xlabel('Numéro de la génération')
+    plt.ylabel('Nombre de mouvements du meilleur bot')
+    plt.title('Amélioration du nombre de mouvements par génération')
+    plt.grid(True)
+    plt.show()
+
+if __name__ == "__main__":
+    run_genetic_algorithm(10000)
